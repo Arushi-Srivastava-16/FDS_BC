@@ -3,7 +3,7 @@
 import torch
 import torch.nn as nn
 from torch.utils.data import DataLoader
-from models.backbone import Backbone
+from Faltu.backbone import Backbone
 from losses.contrastive_loss import NTXentLoss
 from datasets.vindr_dataset import VinDrDataset
 from torchvision import transforms

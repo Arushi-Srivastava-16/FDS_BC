@@ -5,7 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 class FocalNetDINO(nn.Module):
-    def __init__(self, num_queries=100, hidden_dim=256):
+    def __init__(self, num_queries=10, hidden_dim=256):
         super(FocalNetDINO, self).__init__()
         self.num_queries = num_queries
         self.hidden_dim = hidden_dim
@@ -37,8 +37,9 @@ class FocalNetDINO(nn.Module):
         transformer_out = self.transformer_encoder(queries + x.mean(0, keepdim=True))  # [num_queries, B, C]
 
         transformer_out = transformer_out.permute(1, 0, 2)  # [B, num_queries, C]
-        bboxes = self.bbox_head(transformer_out)
-        confidences = self.confidence_head(transformer_out)
+
+        bboxes = torch.sigmoid(self.bbox_head(transformer_out))  # Apply sigmoid to constrain to [0, 1]
+        confidences = torch.sigmoid(self.confidence_head(transformer_out))  # Optional: constrain confidence to [0, 1]
 
         outputs = torch.cat([bboxes, confidences], dim=-1)  # [B, num_queries, 5]
         return outputs

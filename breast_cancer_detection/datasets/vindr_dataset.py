@@ -1,41 +1,48 @@
-# breast_cancer_detection/datasets/vindr_dataset.py
-
 import os
+import pandas as pd
+from PIL import Image
 import torch
 from torch.utils.data import Dataset
-from PIL import Image
 
 class VinDrDataset(Dataset):
-    def __init__(self, image_dir, annotations=None, transform=None):
-        """
-        Args:
-            image_dir (str): Path to directory containing PNG images.
-            annotations (dict): {image_id: [list of bounding boxes]}.
-            transform (callable, optional): Optional transform to be applied on an image.
-        """
+    def __init__(self, image_dir, annotation_csv, transform=None):
         self.image_dir = image_dir
-        self.image_filenames = [f for f in os.listdir(image_dir) if f.endswith('.png')]
-        self.annotations = annotations
+        self.annotations = pd.read_csv(annotation_csv)
         self.transform = transform
 
+        # Filter rows that have a valid bounding box
+        self.annotations['has_box'] = ~(
+            (self.annotations['xmin'] == 0) & 
+            (self.annotations['ymin'] == 0) & 
+            (self.annotations['xmax'] == 0) & 
+            (self.annotations['ymax'] == 0)
+        )
+
+        # Only keep rows where bounding boxes are valid
+        self.annotations = self.annotations[self.annotations['has_box'] == True].reset_index(drop=True)
+
     def __len__(self):
-        return len(self.image_filenames)
+        return len(self.annotations)
 
     def __getitem__(self, idx):
-        img_name = self.image_filenames[idx]
-        img_path = os.path.join(self.image_dir, img_name)
-        image = Image.open(img_path).convert('RGB')
+        row = self.annotations.iloc[idx]
+        img_path = os.path.join(self.image_dir, row['image_path'])
+
+        image = Image.open(img_path).convert("RGB")
+        width, height = image.size
 
         if self.transform:
             image = self.transform(image)
 
-        # Annotations (bounding boxes) if available
-        boxes = None
-        if self.annotations and img_name in self.annotations:
-            boxes = torch.tensor(self.annotations[img_name], dtype=torch.float32)
+        # Normalize bounding box to [0, 1]
+        box = torch.tensor([
+            row['xmin'] / width,
+            row['ymin'] / height,
+            row['xmax'] / width,
+            row['ymax'] / height
+        ], dtype=torch.float32)
 
         return {
             'image': image,
-            'filename': img_name,
-            'boxes': boxes   # (optional) could be None during inference
+            'boxes': box
         }

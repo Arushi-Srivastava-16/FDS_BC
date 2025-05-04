@@ -1,30 +1,55 @@
-# breast_cancer_detection/utils/crop_utils.py
-
 import torch
-import torchvision.transforms.functional as TF
+import torchvision.transforms as T
+from PIL import Image
+import os
 
-def crop_regions(image, boxes, crop_size=(128, 128)):
+# Transform to resize each crop to 224x224
+resize_crop = T.Compose([
+    T.Resize((224, 224)),
+    T.ToTensor()
+])
+
+def extract_crops_from_predictions(image, pred_boxes, num_crops=5):
     """
-    Crops regions from the image based on bounding boxes.
+    Extract and resize crops from normalized predicted bounding boxes.
 
     Args:
-        image (Tensor): [C, H, W]
-        boxes (Tensor): [N, 5]  (x, y, w, h, confidence)
-        crop_size (tuple): output size (H, W) for each crop
+        image (PIL.Image or torch.Tensor): Original image.
+        pred_boxes (torch.Tensor): [NUM_QUERIES, 4] with (x1, y1, x2, y2) normalized [0–1].
+        num_crops (int): Number of crops to extract.
 
     Returns:
-        crops (Tensor): [N, C, crop_size[0], crop_size[1]]
+        List[torch.Tensor]: List of crops resized to [3, 224, 224].
     """
     crops = []
-    _, H, W = image.shape
-    for box in boxes:
-        x, y, w, h, conf = box
-        x1 = int(max(x, 0))
-        y1 = int(max(y, 0))
-        x2 = int(min(x + w, W))
-        y2 = int(min(y + h, H))
-        crop = image[:, y1:y2, x1:x2]
-        crop = TF.resize(crop, crop_size)
-        crops.append(crop)
-    crops = torch.stack(crops) if crops else torch.empty(0)
+
+    # Convert tensor to PIL Image if needed
+    if isinstance(image, torch.Tensor):
+        image = T.ToPILImage()(image.cpu())
+
+    W, H = image.size
+
+    # Make sure pred_boxes is on CPU
+    pred_boxes = pred_boxes.detach().cpu()
+
+    for i in range(min(num_crops, pred_boxes.size(0))):
+        # Denormalize box coordinates
+        x1, y1, x2, y2 = pred_boxes[i]
+        x1 = int(x1.item() * W)
+        y1 = int(y1.item() * H)
+        x2 = int(x2.item() * W)
+        y2 = int(y2.item() * H)
+
+        # Clamp to image bounds
+        x1 = max(0, x1)
+        y1 = max(0, y1)
+        x2 = min(W, x2)
+        y2 = min(H, y2)
+
+        # Skip invalid boxes
+        if x2 > x1 and y2 > y1:
+            crop = image.crop((x1, y1, x2, y2))
+            crop = resize_crop(crop)  # Resize to 224x224 and convert to tensor
+            crops.append(crop)
+
     return crops
